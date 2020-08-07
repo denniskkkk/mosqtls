@@ -1,0 +1,123 @@
+ 
+install guide for mosquitto mqtt server with TLS 1.2, hash password authentication, acl user list for topic access
+
+
+fedora 32
+
+on root user
+
+dnf install mosquitto easy-rsa
+
+or if developer 
+
+dnf install mosquitto easy-rsa mosquitto-devel 
+
+cd  /etc/mosquitto
+
+# setup certificate directory
+
+mkdir certs
+
+chmod 700 certs
+
+
+vi mosquitto.conf
+
+password_file /etc/mosquitto/passwd
+acl_file      /etc/mosquitto/aclfile
+allow_anonymous false
+
+listener 1885
+protocol mqtt
+cafile /etc/mosquitto/certs/ca.crt
+certfile /etc/mosquitto/certs/pp.crt
+keyfile /etc/mosquitto/certs/pp.key
+crlfile /etc/mosquitto/certs/crl.pem
+require_certificate false
+tls_version tlsv1.2
+
+pid_file /var/run/mosquitto.pid
+autosave_interval 1800
+persistence false
+#persistence_location /var/lib/mosquitto/
+log_dest file /var/log/mosquitto/mosquitto.log
+
+#save it
+config passwd file as user password file.
+config aclfile as acl list file for topic access right.
+config disable anonymous access.
+config listen mqtt tls at port 1885.
+config allow TLS 1.2 above.
+
+vi aclfile
+
+user user
+topic readwrite msg/topic
+
+topic read $SYS/#
+
+# save it
+config allow user have read write access to topic msg/topic.
+config allow read $SYS system topic about message server status.
+
+mosquitto_passwd -c passwd user
+#enter password twice
+add and create user to new passwd file
+
+chmod 600 passwd 
+chmod 600 aclfile
+
+#setup easy-rsa certificate authority
+
+mkdir ~/cert
+chmod 700 ~/cert
+cp -air /usr/share/easy-rsa/3/* ~/cert/
+cd ~/cert
+
+
+vi vars
+
+set_var EASYRSA                "$PWD"
+set_var EASYRSA_PKI            "$EASYRSA/pki"
+set_var EASYRSA_REQ_COUNTRY    "HK"
+set_var EASYRSA_REQ_PROVINCE   "Hong Kong"
+set_var EASYRSA_REQ_CITY       "office"
+set_var EASYRSA_REQ_ORG        "server"
+set_var EASYRSA_REQ_EMAIL      "admin@localhost"
+set_var EASYRSA_REQ_OU         "office ca"
+set_var EASYRSA_KEY_SIZE       4096
+set_var EASYRSA_ALGO           rsa
+set_var EASYRSA_CA_EXPIRE      7500
+set_var EASYRSA_CERT_EXPIRE    3600
+set_var EASYRSA_NS_SUPPORT     "no"
+set_var EASYRSA_NS_COMMENT     "server ca"
+set_var EASYRSA_EXT_DIR        "$EASYRSA/x509-types"
+set_var EASYRSA_SSL_CONF       "$EASYRSA/openssl-easyrsa.cnf"
+set_var EASYRSA_DIGEST         "sha256"
+
+#save it !
+
+./easyrsa clean-all 
+./easyrsa init-pki 
+./easyrsa build-ca 
+./easyrsa build-server-full <hostname> nopass
+./easyrsa build-client-full <client-hostname> nopass
+./easyrsa gen-crl
+
+cp -v ca.crt /etc/mosquitto/certs/
+cp -v pki/<hostname>.key /etc/mosquitto/certs/
+cp -v issued/<hostname.crt /etc/mosquitto/certs/
+cp -v crl.pem /etc/mosquitto/certs/
+
+#some selinux setting
+restorecon -Rv /etc/mosquitto
+
+#system service setting
+systemctl enable mosquitto
+systemctl start mosquitto
+
+# do some test on system status topic
+
+mosquitto_sub -h pp --insecure -p 1885  --cafile certs/ca.crt  --cert certs/x.crt --key certs/x.key -u user -P password -t '$SYS/broker/clients/uptime' -C 1
+
+
